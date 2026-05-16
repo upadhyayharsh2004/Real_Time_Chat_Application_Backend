@@ -21,7 +21,6 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     private readonly IModel _channel;
     private readonly ILogger<RabbitMqPublisher> _logger;
     private bool _disposed;
-
     // ── Queue name constants — must match what UC2/UC3 consumers declare ──────
     public const string QueueUserRegistered = "connecthub.user.registered";
     public const string QueueUserDeactivated = "connecthub.user.deactivated";
