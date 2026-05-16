@@ -15,27 +15,6 @@ using System.Text.Json;
 using RabbitMQ.Client;
 
 namespace ConnectHub.Auth.Models.Entities;
-
-/// <summary>
-/// RabbitMqPublisher — publishes ALL Auth-Service domain events to RabbitMQ.
-///
-/// Follows the same pattern as UC2 Message-Service and UC3 ChatRoom-Service:
-///   - Reads host/user/password from IConfiguration (not hardcoded)
-///   - All queues declared as durable (survive broker restart)
-///   - Messages marked Persistent = true (survive broker restart)
-///   - Registered as AddSingleton — connection/channel reused across requests
-///   - Publish failures are logged but NEVER block the DB operation (fire-and-forget)
-///
-/// Queues published (all durable):
-///   connecthub.user.registered       → new account created
-///   connecthub.user.deactivated      → account deactivated   (consumed by UC2 + UC3)
-///   connecthub.user.reactivated      → account re-enabled by admin
-///   connecthub.user.profile.updated  → display name / bio / avatar changed
-///   connecthub.user.password.changed → password changed (security event)
-///   connecthub.user.role.changed     → role flipped (User ↔ Admin)
-///   connecthub.user.online           → user logged in / came online
-///   connecthub.user.offline          → user logged out / went offline
-/// </summary>
 public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
 {
     private readonly IConnection _connection;

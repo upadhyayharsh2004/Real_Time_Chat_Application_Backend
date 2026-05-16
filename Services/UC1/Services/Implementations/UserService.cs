@@ -218,6 +218,10 @@ public class UserService : IUserService
             await _userRepo.UpdateUser(trackedUser);
         }
 
+        // Sync memory object so response DTO shows correct status for frontend
+        user.IsOnline = true;
+        user.LastSeen = DateTime.UtcNow;
+
         var accessToken = _jwtService.GenerateAccessToken(user);
         var refreshTokenString = _jwtService.GenerateRefreshToken();
         var refreshExpiry = int.Parse(_config["Jwt:RefreshExpiryDays"] ?? "7");
