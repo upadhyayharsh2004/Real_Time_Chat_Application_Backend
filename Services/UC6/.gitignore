@@ -1,0 +1,23 @@
+bin/
+obj/
+*.user
+appsettings.Production.json
+secrets.json
+.DS_Store
+.vs/
+# Azurite
+__azurite*
+AzuriteConfig
+
+# Azurite storage directories
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+
+# Azurite extent files (UUID-like names)
+[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]
+
+# Media blobs / generated storage
+*.db
+
+# Config
