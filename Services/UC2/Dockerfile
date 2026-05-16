@@ -18,4 +18,8 @@ RUN dotnet publish "ConnectHub.Message.API.csproj" -c Release -o /app/publish /p
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:80
+
 ENTRYPOINT ["dotnet", "ConnectHub.Message.API.dll"]
