@@ -1,0 +1,335 @@
+version: "3.9"
+networks:
+  connecthub-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  azurite-data:
+  gateway-logs:
+
+services:
+
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: connecthub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: connecthub_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: connecthub_db_zr5m
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U connecthub_user -d connecthub_db_zr5m" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: connecthub-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672" # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: connecthub-azurite
+    restart: unless-stopped
+    command: "azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0"
+    ports:
+      - "10000:10000" # Blob
+      - "10001:10001" # Queue
+      - "10002:10002" # Table
+    volumes:
+      - azurite-data:/data
+    networks:
+      - connecthub-net
+
+  # ─── UC1 — Auth Service ────────────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ./Services/UC1
+      dockerfile: Dockerfile
+    container_name: connecthub-auth
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__AuthDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=auth;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      Frontend__BaseUrl: "${FRONTEND_URL:-http://localhost:3000}"
+      Admin__Email: "admin@connecthub.com"
+      Admin__Password: "${ADMIN_PASSWORD}"
+      Kestrel__Endpoints__Http__Url: "http://+:5000"
+    ports:
+      - "5000:5000"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5000/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── UC2 — Message Service ─────────────────────────────────────────────────
+
+  message-service:
+    build:
+      context: ./Services/UC2
+      dockerfile: Dockerfile
+    container_name: connecthub-message
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__MessageDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=message;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      Kestrel__Endpoints__Http__Url: "http://+:5001"
+    ports:
+      - "5001:5001"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5001/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── UC3 — ChatRoom Service ────────────────────────────────────────────────
+
+  chatroom-service:
+    build:
+      context: ./Services/UC3
+      dockerfile: Dockerfile
+    container_name: connecthub-chatroom
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__ChatRoomDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=chatroom;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      Kestrel__Endpoints__Http__Url: "http://+:5043"
+    ports:
+      - "5043:5043"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5043/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── UC4 — Presence Service ────────────────────────────────────────────────
+
+  presence-service:
+    build:
+      context: ./Services/UC4
+      dockerfile: Dockerfile
+    container_name: connecthub-presence
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__PresenceDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=presence;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      Kestrel__Endpoints__Http__Url: "http://+:5007"
+    ports:
+      - "5007:5007"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5007/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── UC5 — Notification Service ────────────────────────────────────────────
+
+  notification-service:
+    build:
+      context: ./Services/UC5
+      dockerfile: Dockerfile
+    container_name: connecthub-notification
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__NotificationDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=notification;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      Email__Enabled: "false"
+      Kestrel__Endpoints__Http__Url: "http://+:5009"
+    ports:
+      - "5009:5009"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5009/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── UC6 — Media Service ───────────────────────────────────────────────────
+
+  media-service:
+    build:
+      context: ./Services/UC6
+      dockerfile: Dockerfile
+    container_name: connecthub-media
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__MediaDb: "Host=ep-tiny-tree-aqjnls6j-pooler.c-8.us-east-1.aws.neon.tech;Port=5432;Database=neondb;Username=neondb_owner;Password=${NEON_DB_PASSWORD};SslMode=Require;Trust Server Certificate=true;Search Path=media;Timeout=60;Command Timeout=60;KeepAlive=30;"
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: guest
+      RabbitMQ__Password: guest
+      AzureBlob__ConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      AzureBlob__ContainerName: connecthub-media
+      Kestrel__Endpoints__Http__Url: "http://+:5008"
+    ports:
+      - "5008:5008"
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5008/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ─── API Gateway ───────────────────────────────────────────────────────────
+
+  gateway:
+    build:
+      context: ./Services/ConnectHub.Gateway
+      dockerfile: Dockerfile
+    container_name: connecthub-gateway
+    restart: unless-stopped
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      message-service:
+        condition: service_healthy
+      chatroom-service:
+        condition: service_healthy
+      presence-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__Secret: "${JWT_SECRET}"
+      Jwt__Issuer: ConnectHub
+      Jwt__Audience: ConnectHubUsers
+      # Override cluster addresses to use Docker service names
+      ReverseProxy__Clusters__auth-cluster__Destinations__auth-primary__Address: "http://auth-service:5000"
+      ReverseProxy__Clusters__message-cluster__Destinations__message-primary__Address: "http://message-service:5001"
+      ReverseProxy__Clusters__chatroom-cluster__Destinations__chatroom-primary__Address: "http://chatroom-service:5043"
+      ReverseProxy__Clusters__presence-cluster__Destinations__presence-primary__Address: "http://presence-service:5007"
+      ReverseProxy__Clusters__notification-cluster__Destinations__notification-primary__Address: "http://notification-service:5009"
+      ReverseProxy__Clusters__media-cluster__Destinations__media-primary__Address: "http://media-service:5008"
+      Cors__AllowedOrigins__0: "${FRONTEND_URL:-http://localhost:3000}"
+      Kestrel__Endpoints__Http__Url: "http://+:5255"
+    ports:
+      - "5255:5255"
+    volumes:
+      - gateway-logs:/app/logs
+    networks:
+      - connecthub-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:5255/health || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s

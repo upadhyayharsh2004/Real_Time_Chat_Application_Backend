@@ -1,0 +1,73 @@
+using ConnectHub.Message.Hubs;
+using ConnectHub.Message.Controllers;
+using ConnectHub.Message.Data;
+using ConnectHub.Message.Middleware;
+using ConnectHub.Message.Models.DTOs;
+using ConnectHub.Message.Models.Entities;
+using ConnectHub.Message.Models.Events;
+using ConnectHub.Message.Repositories.Implementations;
+using ConnectHub.Message.Repositories.Interfaces;
+using ConnectHub.Message.Services.Implementations;
+using ConnectHub.Message.Services.Interfaces;
+using System.Net;
+using System.Text.Json;
+
+
+namespace ConnectHub.Message.Middleware;
+public class ExceptionHandlingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
+            await HandleExceptionAsync(context, ex);
+        }
+    }
+
+    private static async Task HandleExceptionAsync(HttpContext context, Exception ex)
+    {
+        if (context.Response.HasStarted)
+            return;
+
+        context.Response.ContentType = "application/json";
+
+        var (statusCode, message) = ex switch
+        {
+            InvalidOperationException => (HttpStatusCode.Conflict, ex.Message),
+            KeyNotFoundException => (HttpStatusCode.NotFound, ex.Message),
+            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, ex.Message),
+            ArgumentException => (HttpStatusCode.BadRequest, ex.Message),
+            _ => (HttpStatusCode.InternalServerError, ex.ToString())
+        };
+
+        context.Response.StatusCode = (int)statusCode;
+
+        var response = ApiResponseDto<object>.Fail(message);
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        await context.Response.WriteAsync(json);
+    }
+}
+
+
+
+

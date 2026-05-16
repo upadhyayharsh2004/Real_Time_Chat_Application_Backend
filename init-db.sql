@@ -1,0 +1,7 @@
+-- Create schemas for all microservices
+CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS message;
+CREATE SCHEMA IF NOT EXISTS chatroom;
+CREATE SCHEMA IF NOT EXISTS presence;
+CREATE SCHEMA IF NOT EXISTS notification;
+CREATE SCHEMA IF NOT EXISTS media;
