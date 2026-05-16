@@ -44,21 +44,28 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             VirtualHost = config["RabbitMQ:VHost"] ?? "/"
         };
 
-        _connection = factory.CreateConnection();
-        _channel = _connection.CreateModel();
+        try
+        {
+            _connection = factory.CreateConnection();
+            _channel = _connection.CreateModel();
 
-        // Declare all queues as durable (survive broker restart)
-        foreach (var queue in new[]
-        {
-            QueueRoomCreated, QueueRoomDeleted,
-            QueueRoomMemberJoined, QueueRoomMemberLeft,
-            QueueRoomUpdated, QueueRoomInviteSent
-        })
-        {
-            _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+            // Declare all queues as durable (survive broker restart)
+            foreach (var queue in new[]
+            {
+                QueueRoomCreated, QueueRoomDeleted,
+                QueueRoomMemberJoined, QueueRoomMemberLeft,
+                QueueRoomUpdated, QueueRoomInviteSent
+            })
+            {
+                _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+            }
+
+            _logger.LogInformation("[RabbitMQ] ChatRoom publisher connected to {Host}", factory.HostName);
         }
-
-        _logger.LogInformation("[RabbitMQ] ChatRoom publisher connected to {Host}", factory.HostName);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RabbitMQ] Publisher failed to connect to {Host} on startup. Messages will not be published.", factory.HostName);
+        }
     }
 
     public Task PublishRoomCreatedAsync(RoomCreatedEvent @event) =>
@@ -83,6 +90,12 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         try
         {
+            if (_channel == null)
+            {
+                _logger.LogWarning("[RabbitMQ] Channel is null. Cannot publish {EventType} to {Queue}", @event.GetType().Name, queue);
+                return Task.CompletedTask;
+            }
+
             var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(@event));
 
             var props = _channel.CreateBasicProperties();

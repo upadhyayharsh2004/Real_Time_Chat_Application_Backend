@@ -18,4 +18,9 @@ RUN dotnet publish "ConnectHub.ChatRoom.API.csproj" -c Release -o /app/publish /
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# Set environment variables for production
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:80
+
 ENTRYPOINT ["dotnet", "ConnectHub.ChatRoom.API.dll"]
