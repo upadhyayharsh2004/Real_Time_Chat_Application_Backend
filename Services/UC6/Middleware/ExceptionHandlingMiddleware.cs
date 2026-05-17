@@ -55,7 +55,7 @@ public class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = (int)statusCode;
         var json = JsonSerializer.Serialize(
-            ApiResponseDto<object>.Fail(message),
+            ApiResponseDto<object>.Fail(message!),
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         await context.Response.WriteAsync(json);
     }

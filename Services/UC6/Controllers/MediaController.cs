@@ -31,6 +31,9 @@ public class MediaController : ControllerBase
         _mediaService = mediaService;
         _logger = logger;
     }
+    /// <summary>
+    /// POST /api/media/upload
+    /// Uploads a media file.
     /// </summary>
     [HttpPost("upload")]
     [ProducesResponseType(typeof(ApiResponseDto<MediaFileDto>), 201)]
@@ -117,6 +120,31 @@ public class MediaController : ControllerBase
     {
         var stats = await _mediaService.GetFileStats();
         return Ok(ApiResponseDto<FileStatsDto>.Ok(stats));
+    }
+
+    /// <summary>
+    /// GET /api/media/files/{fileId}/{fileName}
+    /// Serves files from local storage fallback.
+    /// </summary>
+    [HttpGet("files/{fileId}/{fileName}")]
+    [AllowAnonymous]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(404)]
+    public IActionResult ServeFile(string fileId, string fileName)
+    {
+        var filePath = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot", "uploads", fileId, fileName);
+        if (!System.IO.File.Exists(filePath))
+        {
+            return NotFound(ApiResponseDto<object>.Fail("File not found."));
+        }
+
+        var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+        if (!provider.TryGetContentType(filePath, out var contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        return PhysicalFile(filePath, contentType, true);
     }
 
     // ── Helper ─────────────────────────────────────────────────────

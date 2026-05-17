@@ -14,15 +14,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ConnectHub.Media.Data;
 
-/// <summary>
-/// MediaDbContext — EF Core DbContext for Media service.
-/// Indexes optimised for common queries:
-///   (UploadedBy) — files by user
-///   (RoomId) — files in a room (gallery)
-///   (MessageId) — files attached to a message
-///   (ExpiresAt) — expired files for daily cleanup
-///   (ContentType) — stats by type
-/// </summary>
 public class MediaDbContext : DbContext
 {
     public MediaDbContext(DbContextOptions<MediaDbContext> options) : base(options) { }

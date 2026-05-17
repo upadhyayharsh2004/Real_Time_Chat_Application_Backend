@@ -40,10 +40,15 @@ builder.Services.AddDbContext<MediaDbContext>(options =>
 builder.Services.Configure<AzureBlobOptions>(
     builder.Configuration.GetSection("AzureBlob"));
 
-var azureBlobConnectionString = builder.Configuration["AzureBlob:ConnectionString"]
-    ?? "UseDevelopmentStorage=true"; // Azurite for local dev
-
-builder.Services.AddSingleton(new BlobServiceClient(azureBlobConnectionString));
+builder.Services.AddSingleton(provider =>
+{
+    var connString = builder.Configuration["AzureBlob:ConnectionString"];
+    if (string.IsNullOrEmpty(connString) || connString.Equals("Mock", StringComparison.OrdinalIgnoreCase) || !connString.Contains("="))
+    {
+        return new BlobServiceClient("UseDevelopmentStorage=true");
+    }
+    return new BlobServiceClient(connString);
+});
 
 // ── JWT Bearer — same secret as UC1-UC5 ───────────────────────────
 builder.Services.AddAuthentication(options =>
