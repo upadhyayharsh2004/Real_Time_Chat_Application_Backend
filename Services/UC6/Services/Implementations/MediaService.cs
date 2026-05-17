@@ -66,10 +66,25 @@ public class MediaService : IMediaService
             throw new ArgumentException($"Content type '{file.ContentType}' is not allowed.");
 
         var fileId = Guid.NewGuid().ToString();
+        var connString = _blobOptions.ConnectionString;
+        bool useFallback = string.IsNullOrEmpty(connString) || 
+                           connString.Contains("YOUR_AZURE_CONNECTION_STRING") || 
+                           connString.Equals("Mock", StringComparison.OrdinalIgnoreCase) ||
+                           connString.Contains("UseDevelopmentStorage") ||
+                           connString.Contains("localhost") ||
+                           connString.Contains("127.0.0.1") ||
+                           connString.Contains("azurite");
+
         string blobUrl;
 
         try
         {
+            if (useFallback)
+            {
+                _logger.LogInformation("Azure Connection String is mock/development. Instantly bypassing Azure Blob Client to avoid timeout delay.");
+                throw new Exception("Bypassing Azure SDK upload to avoid timeout.");
+            }
+
             _logger.LogInformation("Attempting to connect to Azurite/Azure storage...");
             var containerClient = _blobServiceClient.GetBlobContainerClient(_blobOptions.ContainerName);
             await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
