@@ -22,18 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace ConnectHub.Media.Services.Implementations;
 
-/// <summary>
-/// MediaService — implements IMediaService.
-///
-/// As per class diagram (Figure 7):
-///   - BlobServiceClient injected via IOptions<AzureBlobOptions>
-///   - UploadFile() streams IFormFile directly to BlobClient.UploadAsync()
-///     WITHOUT temp disk write (memory-efficient)
-///   - GenerateSasUrl() uses BlobSasBuilder with ExpiresOn = UtcNow.AddHours(1)
-///     for secure time-limited download without a public Blob container
-///   - After UploadFile() → publish MediaUploadedEvent to RabbitMQ
-///   - CleanupExpiredFiles() called by MediaCleanupService (IHostedService) daily
-/// </summary>
 public class MediaService : IMediaService
 {
     private readonly IMediaRepository _repo;
@@ -77,31 +65,47 @@ public class MediaService : IMediaService
         if (!_blobOptions.AllowedContentTypes.Contains(file.ContentType?.ToLower()))
             throw new ArgumentException($"Content type '{file.ContentType}' is not allowed.");
 
-        // ── Azure Blob Upload (no temp disk write) ─────────────────
         var fileId = Guid.NewGuid().ToString();
-        var blobName = $"{fileId}/{file.FileName}";
+        string blobUrl;
 
-        _logger.LogInformation("Attempting to connect to Azurite storage...");
-        var containerClient = _blobServiceClient.GetBlobContainerClient(_blobOptions.ContainerName);
-        await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
-        
-        var blobClient = containerClient.GetBlobClient(blobName);
-
-        // Stream directly from IFormFile to BlobClient — no temp file
-        await using var stream = file.OpenReadStream();
-        await blobClient.UploadAsync(stream, new BlobHttpHeaders
+        try
         {
-            ContentType = file.ContentType
-        });
+            _logger.LogInformation("Attempting to connect to Azurite/Azure storage...");
+            var containerClient = _blobServiceClient.GetBlobContainerClient(_blobOptions.ContainerName);
+            await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
+            
+            var blobClient = containerClient.GetBlobClient($"{fileId}/{file.FileName}");
 
-        var blobUrl = blobClient.Uri.ToString().Replace("http://azurite:10000", "http://localhost:10000");
+            // Stream directly from IFormFile to BlobClient — no temp file
+            await using var stream = file.OpenReadStream();
+            await blobClient.UploadAsync(stream, new BlobHttpHeaders
+            {
+                ContentType = file.ContentType
+            });
+
+            blobUrl = blobClient.Uri.ToString().Replace("http://azurite:10000", "http://localhost:10000");
+            _logger.LogInformation("Successfully uploaded file to Azure Blob: {Url}", blobUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Azure Blob Storage upload failed or not configured. Falling back to local file storage.");
+            
+            var uploadsDir = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot", "uploads", fileId);
+            System.IO.Directory.CreateDirectory(uploadsDir);
+            
+            var filePath = System.IO.Path.Combine(uploadsDir, file.FileName);
+            await using (var fileStream = new System.IO.FileStream(filePath, System.IO.FileMode.Create))
+            {
+                await file.CopyToAsync(fileStream);
+            }
+            
+            blobUrl = $"/api/media/files/{fileId}/{file.FileName}";
+            _logger.LogInformation("Successfully saved file to local storage fallback: {Url}", blobUrl);
+        }
+
         var fileSizeKb = file.Length / 1024;
 
-        _logger.LogInformation(
-            "File uploaded to Azure Blob: BlobName={BlobName} SizeKb={SizeKb}",
-            blobName, fileSizeKb);
-
-        // ── ✅ STEP 1: Persist MediaFile to DB ────────────────────
+        // ── STEP 1: Persist MediaFile to DB ────────────────────
         var mediaFile = new MediaFile
         {
             FileId      = fileId,
@@ -177,10 +181,25 @@ public class MediaService : IMediaService
             throw new UnauthorizedAccessException("You can only delete your own files.");
 
         // Delete from Azure Blob Storage
-        var blobName = $"{file.FileId}/{file.FileName}";
-        var containerClient = _blobServiceClient.GetBlobContainerClient(_blobOptions.ContainerName);
-        var blobClient = containerClient.GetBlobClient(blobName);
-        await blobClient.DeleteIfExistsAsync();
+        try
+        {
+            var blobName = $"{file.FileId}/{file.FileName}";
+            var containerClient = _blobServiceClient.GetBlobContainerClient(_blobOptions.ContainerName);
+            var blobClient = containerClient.GetBlobClient(blobName);
+            await blobClient.DeleteIfExistsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Azure Blob delete failed. Attempting local file deletion.");
+        }
+
+        // Also delete from local folder if exists
+        var localFolder = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot", "uploads", file.FileId);
+        if (System.IO.Directory.Exists(localFolder))
+        {
+            System.IO.Directory.Delete(localFolder, true);
+            _logger.LogInformation("Deleted local storage folder for file {FileId}", file.FileId);
+        }
 
         // Delete from DB
         await _repo.DeleteByFileId(fileId);

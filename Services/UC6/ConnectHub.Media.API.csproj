@@ -6,11 +6,12 @@
     <RootNamespace>ConnectHub.Media</RootNamespace>
     <AssemblyName>ConnectHub.Media.API</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!-- JWT — same contract as UC1-UC5 -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.0.3" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.0" />
     <!-- Azure Blob Storage — BlobServiceClient, UploadBlobAsync, GenerateSasUrl -->
     <PackageReference Include="Azure.Storage.Blobs" Version="12.19.1" />
     <!-- RabbitMQ — publish MediaUploaded; consume user.deactivated/room.deleted -->

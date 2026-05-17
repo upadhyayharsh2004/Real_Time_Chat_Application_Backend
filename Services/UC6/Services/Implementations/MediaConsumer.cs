@@ -17,15 +17,6 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
 namespace ConnectHub.Media.Services.Implementations;
-
-/// <summary>
-/// MediaConsumer — BackgroundService consuming INBOUND events from UC1 and UC3.
-/// Same pattern as UC2-UC5: reads config, IServiceScopeFactory, BasicNack+requeue.
-///
-/// Queues consumed (EXACT names matching UC1/UC3 publishers):
-///   connecthub.user.deactivated → UC1 → flag user files as expired
-///   connecthub.room.deleted     → UC3 → mark room files as expired for cleanup
-/// </summary>
 public class MediaConsumer : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
