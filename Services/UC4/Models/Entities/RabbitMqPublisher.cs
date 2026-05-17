@@ -32,8 +32,9 @@ namespace ConnectHub.Presence.Models.Entities;
 /// </summary>
 public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
 {
-    private readonly IConnection _connection;
-    private readonly IModel _channel;
+    private IConnection? _connection;
+    private IModel? _channel;
+    private readonly ConnectionFactory _factory;
     private readonly ILogger<RabbitMqPublisher> _logger;
     private bool _disposed;
 
@@ -44,7 +45,7 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         _logger = logger;
 
-        var factory = new ConnectionFactory
+        _factory = new ConnectionFactory
         {
             HostName    = config["RabbitMQ:Host"]     ?? "localhost",
             UserName    = config["RabbitMQ:Username"] ?? "guest",
@@ -53,13 +54,28 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             VirtualHost = config["RabbitMQ:VHost"]    ?? "/"
         };
 
-        _connection = factory.CreateConnection();
-        _channel    = _connection.CreateModel();
+        Connect();
+    }
 
-        foreach (var queue in new[] { QueuePresenceOnline, QueuePresenceOffline })
-            _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+    private void Connect()
+    {
+        try
+        {
+            if (_connection != null && _connection.IsOpen && _channel != null && _channel.IsOpen)
+                return;
 
-        _logger.LogInformation("[RabbitMQ] Presence publisher connected to {Host}", factory.HostName);
+            _connection = _factory.CreateConnection();
+            _channel    = _connection.CreateModel();
+
+            foreach (var queue in new[] { QueuePresenceOnline, QueuePresenceOffline })
+                _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+
+            _logger.LogInformation("[RabbitMQ] Presence publisher connected to {Host}", _factory.HostName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RabbitMQ] Publisher failed to connect to {Host}.", _factory.HostName);
+        }
     }
 
     public Task PublishUserPresenceOnlineAsync(UserPresenceOnlineEvent @event) =>
@@ -72,6 +88,17 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         try
         {
+            if (_channel == null || _channel.IsClosed)
+            {
+                Connect();
+            }
+
+            if (_channel == null || _channel.IsClosed)
+            {
+                _logger.LogWarning("[RabbitMQ] Channel is null or closed. Cannot publish {EventType} to {Queue}", @event.GetType().Name, queue);
+                return Task.CompletedTask;
+            }
+
             var body  = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(@event));
             var props = _channel.CreateBasicProperties();
             props.Persistent  = true;

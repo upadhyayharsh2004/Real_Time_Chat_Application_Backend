@@ -18,8 +18,9 @@ using RabbitMQ.Client;
 namespace ConnectHub.ChatRoom.Models.Entities;
 public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
 {
-    private readonly IConnection _connection;
-    private readonly IModel _channel;
+    private IConnection? _connection;
+    private IModel? _channel;
+    private readonly ConnectionFactory _factory;
     private readonly ILogger<RabbitMqPublisher> _logger;
     private bool _disposed;
 
@@ -35,7 +36,7 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         _logger = logger;
 
-        var factory = new ConnectionFactory
+        _factory = new ConnectionFactory
         {
             HostName = config["RabbitMQ:Host"] ?? "localhost",
             UserName = config["RabbitMQ:Username"] ?? "guest",
@@ -44,9 +45,17 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             VirtualHost = config["RabbitMQ:VHost"] ?? "/"
         };
 
+        Connect();
+    }
+
+    private void Connect()
+    {
         try
         {
-            _connection = factory.CreateConnection();
+            if (_connection != null && _connection.IsOpen && _channel != null && _channel.IsOpen)
+                return;
+
+            _connection = _factory.CreateConnection();
             _channel = _connection.CreateModel();
 
             // Declare all queues as durable (survive broker restart)
@@ -60,11 +69,11 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
                 _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
             }
 
-            _logger.LogInformation("[RabbitMQ] ChatRoom publisher connected to {Host}", factory.HostName);
+            _logger.LogInformation("[RabbitMQ] ChatRoom publisher connected to {Host}", _factory.HostName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[RabbitMQ] Publisher failed to connect to {Host} on startup. Messages will not be published.", factory.HostName);
+            _logger.LogError(ex, "[RabbitMQ] Publisher failed to connect to {Host}.", _factory.HostName);
         }
     }
 
@@ -90,9 +99,14 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         try
         {
-            if (_channel == null)
+            if (_channel == null || _channel.IsClosed)
             {
-                _logger.LogWarning("[RabbitMQ] Channel is null. Cannot publish {EventType} to {Queue}", @event.GetType().Name, queue);
+                Connect(); // Try to reconnect
+            }
+
+            if (_channel == null || _channel.IsClosed)
+            {
+                _logger.LogWarning("[RabbitMQ] Channel is null or closed. Cannot publish {EventType} to {Queue}", @event.GetType().Name, queue);
                 return Task.CompletedTask;
             }
 

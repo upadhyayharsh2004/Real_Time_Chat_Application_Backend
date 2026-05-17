@@ -10,15 +10,13 @@ using ConnectHub.Auth.Services.Implementations;
 using ConnectHub.Auth.Services.Interfaces;
 using System.Text;
 using System.Text.Json;
-
-
 using RabbitMQ.Client;
-
 namespace ConnectHub.Auth.Models.Entities;
 public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
 {
-    private readonly IConnection _connection;
-    private readonly IModel _channel;
+    private IConnection? _connection;
+    private IModel? _channel;
+    private readonly ConnectionFactory _factory;
     private readonly ILogger<RabbitMqPublisher> _logger;
     private bool _disposed;
 
@@ -26,31 +24,24 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     public const string QueueUserRegistered = "connecthub.user.registered";
     public const string QueueUserDeactivated = "connecthub.user.deactivated";
 
-
     // public const string QueueUserReactivated = "connecthub.user.reactivated";
 
     public const string QueueMessageUserReactivated = "connecthub.message.user.reactivated";
-
     public const string QueueChatRoomUserReactivated = "connecthub.chatroom.user.reactivated";
-
     public const string QueueChatRoomUserDeactivated = "connecthub.chatroom.user.deactivated";
     public const string QueueUserProfileUpdated = "connecthub.user.profile.updated";
     public const string QueueUserPasswordChanged = "connecthub.user.password.changed";
     public const string QueueUserRoleChanged = "connecthub.user.role.changed";
-
     public const string QueueMessageUserOnline = "connecthub.message.user.online";
-
     public const string QueueChatRoomUserOnline = "connecthub.chatroom.user.online";
-
     public const string QueueMessageUserOffline = "connecthub.message.user.offline";
-
     public const string QueueChatRoomUserOffline = "connecthub.chatroom.user.offline";
 
     public RabbitMqPublisher(IConfiguration config, ILogger<RabbitMqPublisher> logger)
     {
         _logger = logger;
 
-        var factory = new ConnectionFactory
+        _factory = new ConnectionFactory
         {
             HostName = config["RabbitMQ:Host"] ?? "localhost",
             UserName = config["RabbitMQ:Username"] ?? "guest",
@@ -59,30 +50,45 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             VirtualHost = config["RabbitMQ:VHost"] ?? "/"
         };
 
-        _connection = factory.CreateConnection();
-        _channel = _connection.CreateModel();
+        Connect();
+    }
 
-        // Declare ALL queues as durable so they survive a broker restart
-        foreach (var queue in new[]
+    private void Connect()
+    {
+        try
         {
-            QueueUserRegistered,
-            QueueUserDeactivated,
-            QueueChatRoomUserDeactivated,
-            QueueMessageUserReactivated,
-            QueueChatRoomUserReactivated,
-            QueueUserProfileUpdated,
-            QueueUserPasswordChanged,
-            QueueUserRoleChanged,
-            QueueMessageUserOnline,
-            QueueChatRoomUserOnline,
-            QueueMessageUserOffline,
-            QueueChatRoomUserOffline,
-        })
-        {
-            _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+            if (_connection != null && _connection.IsOpen && _channel != null && _channel.IsOpen)
+                return;
+
+            _connection = _factory.CreateConnection();
+            _channel = _connection.CreateModel();
+
+            // Declare ALL queues as durable so they survive a broker restart
+            foreach (var queue in new[]
+            {
+                QueueUserRegistered,
+                QueueUserDeactivated,
+                QueueChatRoomUserDeactivated,
+                QueueMessageUserReactivated,
+                QueueChatRoomUserReactivated,
+                QueueUserProfileUpdated,
+                QueueUserPasswordChanged,
+                QueueUserRoleChanged,
+                QueueMessageUserOnline,
+                QueueChatRoomUserOnline,
+                QueueMessageUserOffline,
+                QueueChatRoomUserOffline,
+            })
+            {
+                _channel.QueueDeclare(queue, durable: true, exclusive: false, autoDelete: false);
+            }
+
+            _logger.LogInformation("[RabbitMQ] Auth publisher connected to {Host}", _factory.HostName);
         }
-
-        _logger.LogInformation("[RabbitMQ] Auth publisher connected to {Host}", factory.HostName);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RabbitMQ] Auth publisher failed to connect to {Host}. Will retry on next publish.", _factory.HostName);
+        }
     }
 
     // ── Typed publish methods ─────────────────────────────────────────────────
@@ -129,6 +135,19 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
     {
         try
         {
+            // Try to reconnect if channel is gone
+            if (_channel == null || _channel.IsClosed)
+            {
+                Connect();
+            }
+
+            if (_channel == null || _channel.IsClosed)
+            {
+                _logger.LogWarning("[RabbitMQ] Channel unavailable. Skipping publish of {EventType} to {Queue}",
+                    @event.GetType().Name, queue);
+                return Task.CompletedTask;
+            }
+
             var json = JsonSerializer.Serialize(@event);
             var body = Encoding.UTF8.GetBytes(json);
 
@@ -167,6 +186,3 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
         _disposed = true;
     }
 }
-
-
-

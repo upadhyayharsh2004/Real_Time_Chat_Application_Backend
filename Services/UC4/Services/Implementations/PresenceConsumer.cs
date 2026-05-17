@@ -25,14 +25,15 @@ public class PresenceConsumer : BackgroundService
     private readonly ILogger<PresenceConsumer> _logger;
 
     // EXACT queue names from UC1 RabbitMqPublisher constants
-    private const string QueueUserOnline          = "connecthub.user.online";
-    private const string QueueUserOffline         = "connecthub.user.offline";
-    private const string QueueUserDeactivated     = "connecthub.user.deactivated";
-    private const string QueueUserReactivated     = "connecthub.user.reactivated";
-    private const string QueueUserProfileUpdated  = "connecthub.user.profile.updated";
+    // UC1 publishes SEPARATE queues for UC2 (message.*) and UC3/UC4 (chatroom.*)
+    private const string QueueUserOnline          = "connecthub.chatroom.user.online";   // UC1: QueueChatRoomUserOnline
+    private const string QueueUserOffline         = "connecthub.chatroom.user.offline";  // UC1: QueueChatRoomUserOffline
+    private const string QueueUserDeactivated     = "connecthub.user.deactivated";       // UC1: QueueUserDeactivated (shared)
+    private const string QueueUserReactivated     = "connecthub.chatroom.user.reactivated"; // UC1: QueueChatRoomUserReactivated
+    private const string QueueUserProfileUpdated  = "connecthub.user.profile.updated";  // UC1: QueueUserProfileUpdated (shared)
 
     // EXACT queue name from UC2 RabbitMqPublisher constants
-    private const string QueueMessageSent         = "connecthub.message.sent";
+    private const string QueueMessageSent         = "connecthub.message.sent";            // UC2: QueueMessageSent
 
     public PresenceConsumer(
         IPresenceService presenceService,
