@@ -45,6 +45,14 @@ builder.Services.AddDbContext<AuthDbContext>(options =>
             npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "auth");
         }));
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | 
+                               Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // ── Authentication ────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("JWT Secret not configured.");
@@ -235,6 +243,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────
+app.UseForwardedHeaders();
+
 //ExceptionHandling sabse pehle — taaki saari errors catch ho sakein
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
