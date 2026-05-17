@@ -21,6 +21,9 @@ COPY --from=build /app/publish .
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser
 
-EXPOSE 5255
+EXPOSE 80
+
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:80
 
 ENTRYPOINT ["dotnet", "ConnectHub.Gateway.dll"]
