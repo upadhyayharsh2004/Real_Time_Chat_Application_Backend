@@ -322,11 +322,11 @@ public class MessageRepository : IMessageRepository
         await _context.SaveChangesAsync();
     }
 
-    public async Task<bool> AddReadReceipt(MessageReadReceipt receipt)
+    public Task<bool> AddReadReceipt(MessageReadReceipt receipt)
     {
-        return false;
+        return Task.FromResult(false);
     }
 
-    public async Task<int> GetReadersCount(int messageId) =>
-        0;
+    public Task<int> GetReadersCount(int messageId) =>
+        Task.FromResult(0);
 }
