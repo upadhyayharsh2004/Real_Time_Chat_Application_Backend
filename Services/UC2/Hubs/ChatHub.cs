@@ -207,7 +207,7 @@ public class ChatHub : Hub
         if (message.ReceiverId.HasValue)
         {
             // For DM: Notify both sender and receiver to keep all UI instances in sync
-            await Clients.Users(new[] { message.SenderId.ToString(), message.ReceiverId.ToString() })
+            await Clients.Users(new[] { message.SenderId.ToString(), message.ReceiverId.Value.ToString() })
                          .SendAsync("MessageRead", readEvent);
         }
         else if (message.RoomId.HasValue)
